@@ -370,6 +370,9 @@ export interface TariffsPurchaseOptions {
   has_subscription?: boolean;
   // Multi-tariff: all available tariffs already purchased
   all_tariffs_purchased?: boolean;
+  // СБП-оформление (Platega recurrent): показывать кнопку «Оформить с
+  // автооплатой СБП» рядом с покупкой с баланса
+  platega_recurrent_enabled?: boolean;
 }
 
 export interface ClassicPurchaseOptions {
@@ -530,6 +533,8 @@ export interface SupportConfig {
   support_type: 'tickets' | 'profile' | 'url' | 'both';
   support_url?: string | null;
   support_username?: string | null;
+  /** Резолвнутый контакт ведёт в Telegram, а не на внешний хелпдеск. */
+  contact_is_telegram?: boolean;
 }
 
 // Paginated response
@@ -645,6 +650,15 @@ export interface SavedCard {
 export interface SavedCardsResponse {
   cards: SavedCard[];
   recurrent_enabled: boolean;
+}
+
+// Platega SBP recurring auto-payment status for a subscription
+export interface SbpRecurringInfo {
+  status: string; // 'none' | 'PENDING' | 'ACTIVE' | 'PAST_DUE'
+  interval?: number; // 1=day,2=week,3=month,4=year
+  amount_kopeks?: number;
+  next_charge_at?: string | null;
+  redirect_url?: string | null;
 }
 
 // Ticket notifications types
