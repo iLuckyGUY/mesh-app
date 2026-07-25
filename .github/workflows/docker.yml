@@ -8,6 +8,9 @@ on:
 
 env:
   DH_IMAGE: iluckyguy/mesh-app
+  DH_NAMESPACE: iluckyguy
+  DH_REPO: mesh-app
+  KEEP_VERSIONS: 2   # latest + N-1 previous version tags kept on Docker Hub
 
 permissions:
   contents: read
@@ -27,6 +30,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -42,11 +48,12 @@ jobs:
           VERSION=$(jq -r '.version' package.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image
+      - name: "Build and push Docker image (multi-arch: amd64+arm64)"
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.DH_IMAGE }}:latest
@@ -58,3 +65,43 @@ jobs:
             VITE_TELEGRAM_BOT_USERNAME=
             VITE_APP_NAME=Cabinet
             VITE_APP_LOGO=V
+
+      - name: Prune old Docker Hub version tags
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          TOKEN=$(curl -s -X POST "https://hub.docker.com/v2/users/login/" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\": \"${DOCKER_USERNAME}\", \"password\": \"${DOCKER_PASSWORD}\"}" \
+            | jq -r .token)
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::warning::Could not authenticate to Docker Hub API, skipping tag prune"
+            exit 0
+          fi
+
+          # All tags except 'latest', newest first
+          TAGS_JSON=$(curl -s -H "Authorization: JWT ${TOKEN}" \
+            "https://hub.docker.com/v2/repositories/${DH_NAMESPACE}/${DH_REPO}/tags/?page_size=100&ordering=-last_updated")
+
+          VERSION_TAGS=$(echo "$TAGS_JSON" | jq -r '.results[].name' | grep -v '^latest$' || true)
+
+          KEEP=$(echo "$VERSION_TAGS" | head -n "${KEEP_VERSIONS}")
+          DELETE=$(echo "$VERSION_TAGS" | tail -n +"$(( KEEP_VERSIONS + 1 ))")
+
+          echo "Keeping: $(echo "$KEEP" | tr '\n' ' ')"
+
+          if [ -z "$DELETE" ]; then
+            echo "Nothing to prune."
+            exit 0
+          fi
+
+          for tag in $DELETE; do
+            echo "Deleting old tag: ${tag}"
+            curl -s -o /dev/null -w "  -> HTTP %{http_code}\n" -X DELETE \
+              -H "Authorization: JWT ${TOKEN}" \
+              "https://hub.docker.com/v2/repositories/${DH_NAMESPACE}/${DH_REPO}/tags/${tag}/"
+          done

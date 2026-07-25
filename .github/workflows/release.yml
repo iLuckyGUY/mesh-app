@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+env:
+  DH_IMAGE: iluckyguy/mesh-app
+
 permissions:
   contents: write
 
@@ -72,7 +75,7 @@ jobs:
             ## Docker Image
 
             ```bash
-            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            docker pull ${{ env.DH_IMAGE }}:${{ github.ref_name }}
             ```
 
             ## Installation
