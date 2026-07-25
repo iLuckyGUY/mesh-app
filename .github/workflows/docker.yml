@@ -70,6 +70,7 @@ jobs:
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          CURRENT_VERSION: v${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -83,14 +84,29 @@ jobs:
             exit 0
           fi
 
-          # All tags except 'latest', newest first
-          TAGS_JSON=$(curl -s -H "Authorization: JWT ${TOKEN}" \
-            "https://hub.docker.com/v2/repositories/${DH_NAMESPACE}/${DH_REPO}/tags/?page_size=100&ordering=-last_updated")
+          # Docker Hub's tag list can lag a few seconds after a push before
+          # the just-pushed tag shows up with a fresh last_updated, which
+          # would make the ordering below miss it. Poll until we see it
+          # (max ~60s), so pruning never runs against a stale list.
+          TAGS_JSON=""
+          for i in $(seq 1 12); do
+            TAGS_JSON=$(curl -s -H "Authorization: JWT ${TOKEN}" \
+              "https://hub.docker.com/v2/repositories/${DH_NAMESPACE}/${DH_REPO}/tags/?page_size=100&ordering=-last_updated")
+            if echo "$TAGS_JSON" | jq -e --arg v "$CURRENT_VERSION" '.results[] | select(.name == $v)' >/dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for ${CURRENT_VERSION} to appear in Docker Hub tag list ($i/12)..."
+            sleep 5
+          done
 
-          VERSION_TAGS=$(echo "$TAGS_JSON" | jq -r '.results[].name' | grep -v '^latest$' || true)
+          ALL_VERSION_TAGS=$(echo "$TAGS_JSON" | jq -r '.results[].name' | grep -v '^latest$' || true)
 
-          KEEP=$(echo "$VERSION_TAGS" | head -n "${KEEP_VERSIONS}")
-          DELETE=$(echo "$VERSION_TAGS" | tail -n +"$(( KEEP_VERSIONS + 1 ))")
+          # Always keep the version we just built, regardless of API ordering.
+          # Fill remaining KEEP_VERSIONS-1 slots with the next most recent tags.
+          OTHER_TAGS=$(echo "$ALL_VERSION_TAGS" | grep -v -x "$CURRENT_VERSION" || true)
+          KEEP_OTHERS=$(( KEEP_VERSIONS - 1 ))
+          KEEP=$(printf '%s\n' "$CURRENT_VERSION"; echo "$OTHER_TAGS" | head -n "$KEEP_OTHERS")
+          DELETE=$(echo "$OTHER_TAGS" | tail -n +"$(( KEEP_OTHERS + 1 ))")
 
           echo "Keeping: $(echo "$KEEP" | tr '\n' ' ')"
 
