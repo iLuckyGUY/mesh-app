@@ -5,6 +5,12 @@ on:
     branches: [main]
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build & push (branch, tag, or SHA). Leave empty for default.'
+        required: false
+        default: ''
 
 env:
   DH_IMAGE: iluckyguy/mesh-app
@@ -17,10 +23,12 @@ permissions:
 
 jobs:
   lint:
+    if: github.event_name != 'workflow_dispatch'
     uses: ./.github/workflows/lint.yml
 
   build-and-push:
-    needs: lint
+    needs: [lint]
+    if: always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,6 +37,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -67,6 +77,10 @@ jobs:
             VITE_APP_LOGO=V
 
       - name: Prune old Docker Hub version tags
+        # Skip pruning on a manual rebuild-from-old-ref dispatch: we don't
+        # want rebuilding an old version to accidentally delete the newer
+        # ones that are actually in production.
+        if: github.event_name != 'workflow_dispatch'
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
@@ -84,14 +98,12 @@ jobs:
             exit 0
           fi
 
-          # Docker Hub's tag list can lag a few seconds after a push before
-          # the just-pushed tag shows up with a fresh last_updated, which
-          # would make the ordering below miss it. Poll until we see it
-          # (max ~60s), so pruning never runs against a stale list.
+          # Poll (up to 60s) until the tag we just pushed is visible, so we
+          # never prune against a list that's missing the current release.
           TAGS_JSON=""
           for i in $(seq 1 12); do
             TAGS_JSON=$(curl -s -H "Authorization: JWT ${TOKEN}" \
-              "https://hub.docker.com/v2/repositories/${DH_NAMESPACE}/${DH_REPO}/tags/?page_size=100&ordering=-last_updated")
+              "https://hub.docker.com/v2/repositories/${DH_NAMESPACE}/${DH_REPO}/tags/?page_size=100")
             if echo "$TAGS_JSON" | jq -e --arg v "$CURRENT_VERSION" '.results[] | select(.name == $v)' >/dev/null 2>&1; then
               break
             fi
@@ -99,23 +111,40 @@ jobs:
             sleep 5
           done
 
-          ALL_VERSION_TAGS=$(echo "$TAGS_JSON" | jq -r '.results[].name' | grep -v '^latest$' || true)
+          ALL_TAGS=$(echo "$TAGS_JSON" | jq -r '.results[].name')
 
-          # Always keep the version we just built, regardless of API ordering.
-          # Fill remaining KEEP_VERSIONS-1 slots with the next most recent tags.
-          OTHER_TAGS=$(echo "$ALL_VERSION_TAGS" | grep -v -x "$CURRENT_VERSION" || true)
-          KEEP_OTHERS=$(( KEEP_VERSIONS - 1 ))
-          KEEP=$(printf '%s\n' "$CURRENT_VERSION"; echo "$OTHER_TAGS" | head -n "$KEEP_OTHERS")
-          DELETE=$(echo "$OTHER_TAGS" | tail -n +"$(( KEEP_OTHERS + 1 ))")
+          # Rank purely by semver (strip a leading 'v'), NOT by Docker Hub's
+          # last_updated - that field lags/reorders unpredictably right after
+          # a push and previously caused the wrong tag to be pruned.
+          VERSION_TAGS_SORTED=$(echo "$ALL_TAGS" \
+            | grep -v '^latest$' \
+            | sed 's/^v//' \
+            | sort -Vr \
+            | sed 's/^/v/')
 
-          echo "Keeping: $(echo "$KEEP" | tr '\n' ' ')"
+          KEEP=$(echo "$VERSION_TAGS_SORTED" | head -n "${KEEP_VERSIONS}")
+          DELETE=$(echo "$VERSION_TAGS_SORTED" | tail -n +"$(( KEEP_VERSIONS + 1 ))")
+
+          # Map back to the exact tag name as it exists on Docker Hub (some
+          # older tags in this repo were pushed without the 'v' prefix).
+          resolve_tag() {
+            local candidate="$1"
+            if echo "$ALL_TAGS" | grep -qx "$candidate"; then
+              echo "$candidate"
+            else
+              echo "${candidate#v}"
+            fi
+          }
+
+          echo "Keeping: $(for t in $KEEP; do resolve_tag "$t"; done | tr '\n' ' ')"
 
           if [ -z "$DELETE" ]; then
             echo "Nothing to prune."
             exit 0
           fi
 
-          for tag in $DELETE; do
+          for t in $DELETE; do
+            tag=$(resolve_tag "$t")
             echo "Deleting old tag: ${tag}"
             curl -s -o /dev/null -w "  -> HTTP %{http_code}\n" -X DELETE \
               -H "Authorization: JWT ${TOKEN}" \
