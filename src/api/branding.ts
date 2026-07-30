@@ -149,6 +149,11 @@ export const initLogoPreload = () => {
   }
 };
 
+export interface BotStartVideoInfo {
+  has_video: boolean;
+  file_id?: string | null;
+}
+
 export const brandingApi = {
   // Get current branding (public, no auth required)
   getBranding: async (): Promise<BrandingInfo> => {
@@ -173,6 +178,29 @@ export const brandingApi = {
       _logoBlobUrl = null;
     }
     sessionStorage.removeItem(LOGO_PRELOADED_KEY);
+    return response.data;
+  },
+
+  // ── Видео стартового меню бота ────────────────────────────────────────
+  // Хранится как Telegram file_id: файл на нашей стороне не сохраняется.
+
+  getBotStartVideo: async (): Promise<BotStartVideoInfo> => {
+    const response = await apiClient.get<BotStartVideoInfo>('/cabinet/branding/bot-start-video');
+    return response.data;
+  },
+
+  uploadBotStartVideo: async (file: File): Promise<BotStartVideoInfo> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post<BotStartVideoInfo>(
+      '/cabinet/branding/bot-start-video',
+      formData,
+    );
+    return response.data;
+  },
+
+  deleteBotStartVideo: async (): Promise<BotStartVideoInfo> => {
+    const response = await apiClient.delete<BotStartVideoInfo>('/cabinet/branding/bot-start-video');
     return response.data;
   },
 

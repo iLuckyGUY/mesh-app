@@ -8,6 +8,7 @@ import { useCurrency } from '../../../hooks/useCurrency';
 import { usePromoDiscount } from '../../../hooks/usePromoDiscount';
 import { usePlatform } from '../../../platform';
 import { openPaymentUrl } from '../../../utils/openPaymentUrl';
+import { getMonthlyPriceKopeks } from '../../../utils/pricing';
 import InsufficientBalancePrompt from '../../InsufficientBalancePrompt';
 import type { Tariff, TariffPeriod } from '../../../types';
 
@@ -35,6 +36,8 @@ export interface TariffPurchaseFormProps {
   balanceKopeks: number | undefined;
   /** СБП-оформление (Platega recurrent) доступно — показать вторую CTA. */
   sbpPurchaseEnabled?: boolean;
+  /** Оформление привязкой Lava доступно — показать вторую CTA. */
+  lavaPurchaseEnabled?: boolean;
   onBack: () => void;
 }
 
@@ -43,6 +46,7 @@ export function TariffPurchaseForm({
   subscriptionId,
   balanceKopeks,
   sbpPurchaseEnabled = false,
+  lavaPurchaseEnabled = false,
   onBack,
 }: TariffPurchaseFormProps) {
   const { t } = useTranslation();
@@ -137,6 +141,47 @@ export function TariffPurchaseForm({
       {sbpPurchaseMutation.isError && (
         <div className="mt-2 text-center text-sm text-error-400">
           {getErrorMessage(sbpPurchaseMutation.error)}
+        </div>
+      )}
+    </>
+  );
+
+  const lavaPurchaseMutation = useMutation({
+    mutationFn: () => subscriptionApi.purchaseWithLavaRecurring(tariff.id),
+    onSuccess: (data) => {
+      if (data.redirect_url) {
+        openPaymentUrl(data.redirect_url, platform, openLink);
+      }
+      queryClient.invalidateQueries({ queryKey: ['subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['purchase-options'] });
+      queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
+      queryClient.invalidateQueries({ queryKey: ['lava-recurring', data.subscription_id] });
+      navigate('/subscriptions', { replace: true });
+    },
+  });
+
+  const lavaPurchaseButton = lavaPurchaseEnabled && (
+    <>
+      <button
+        onClick={() => lavaPurchaseMutation.mutate()}
+        disabled={lavaPurchaseMutation.isPending || purchaseMutation.isPending}
+        className="mt-2 w-full rounded-xl border border-accent-500/40 bg-accent-500/10 py-3 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/20 disabled:opacity-50"
+      >
+        {lavaPurchaseMutation.isPending ? (
+          <span className="flex items-center justify-center gap-2">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            {t('common.loading')}
+          </span>
+        ) : (
+          t('subscription.lavaRecurring.purchaseButton')
+        )}
+      </button>
+      <div className="mt-1.5 text-center text-[11px] text-dark-500">
+        {t('subscription.lavaRecurring.purchaseHint')}
+      </div>
+      {lavaPurchaseMutation.isError && (
+        <div className="mt-2 text-center text-sm text-error-400">
+          {getErrorMessage(lavaPurchaseMutation.error)}
         </div>
       )}
     </>
@@ -240,6 +285,7 @@ export function TariffPurchaseForm({
                 </button>
 
                 {sbpPurchaseButton}
+                {lavaPurchaseButton}
 
                 {purchaseMutation.isError &&
                   !getInsufficientBalanceError(purchaseMutation.error) && (
@@ -279,10 +325,7 @@ export function TariffPurchaseForm({
                   const displayDiscount = promoPeriod.percent;
                   const displayOriginal = promoPeriod.original;
                   const displayPrice = promoPeriod.price;
-                  const displayPerMonth =
-                    displayPrice !== period.price_kopeks
-                      ? Math.round(displayPrice / Math.max(1, period.days / 30))
-                      : period.price_per_month_kopeks;
+                  const displayPerMonth = getMonthlyPriceKopeks(displayPrice, period.days);
 
                   return (
                     <button
@@ -317,9 +360,11 @@ export function TariffPurchaseForm({
                           </span>
                         )}
                       </div>
-                      <div className="mt-1 text-xs text-dark-500">
-                        {formatPrice(displayPerMonth)}/{t('subscription.month')}
-                      </div>
+                      {displayPerMonth !== null && (
+                        <div className="mt-1 text-xs text-dark-500">
+                          {formatPrice(displayPerMonth)}/{t('subscription.month')}
+                        </div>
+                      )}
                     </button>
                   );
                 })}
@@ -666,6 +711,7 @@ export function TariffPurchaseForm({
                     </button>
 
                     {sbpPurchaseButton}
+                    {lavaPurchaseButton}
                   </>
                 );
               })()}

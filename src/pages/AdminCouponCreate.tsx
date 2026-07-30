@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { createNumberInputHandler } from '../utils/inputHelpers';
-import { couponsApi, CouponBatchCreated } from '../api/coupons';
+import { couponsApi, type CouponBatchCreated } from '../api/coupons';
 import { tariffsApi } from '../api/tariffs';
 import { usePlatform } from '../platform/hooks/usePlatform';
 import { copyToClipboard } from '../utils/clipboard';
@@ -33,6 +33,7 @@ export default function AdminCouponCreate() {
   const [couponsCount, setCouponsCount] = useState<number | ''>(50);
   const [priceRubles, setPriceRubles] = useState<number | ''>('');
   const [validDays, setValidDays] = useState<number | ''>('');
+  const [maxPerUser, setMaxPerUser] = useState<number | ''>('');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -77,6 +78,7 @@ export default function AdminCouponCreate() {
       coupons_count: Number(couponsCount),
       wholesale_price_kopeks: priceRubles === '' ? 0 : Math.round(Number(priceRubles) * 100),
       valid_days: validDays === '' ? 0 : Number(validDays),
+      max_per_user: maxPerUser === '' ? 0 : Number(maxPerUser),
     });
   };
 
@@ -274,6 +276,21 @@ export default function AdminCouponCreate() {
               className="input w-full"
             />
             <p className="mt-1 text-xs text-dark-500">{t('admin.coupons.form.validDaysHint')}</p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-dark-300">
+              {t('admin.coupons.form.maxPerUser')}
+            </label>
+            <input
+              type="number"
+              value={maxPerUser}
+              onChange={createNumberInputHandler(setMaxPerUser, 0, 500)}
+              min={0}
+              max={500}
+              placeholder="0"
+              className="input w-full"
+            />
+            <p className="mt-1 text-xs text-dark-500">{t('admin.coupons.form.maxPerUserHint')}</p>
           </div>
         </div>
 

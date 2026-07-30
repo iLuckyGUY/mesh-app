@@ -10,6 +10,8 @@ export interface CouponBatch {
   period_days: number;
   coupons_total: number;
   wholesale_price_kopeks: number;
+  /** Сколько купонов партии может активировать один пользователь; 0 — без ограничения */
+  max_per_user: number;
   valid_until: string | null;
   is_revoked: boolean;
   created_at: string;
@@ -31,6 +33,7 @@ export interface CouponBatchCreateRequest {
   period_days: number;
   coupons_count: number;
   wholesale_price_kopeks?: number;
+  max_per_user?: number;
   valid_days?: number;
 }
 
@@ -99,6 +102,12 @@ export const couponsApi = {
   },
 
   // User: redeem a coupon for the current cabinet user
+  /** Полное удаление партии (в отличие от revoke, который гасит ссылки) */
+  deleteBatch: async (id: number): Promise<{ batch_id: number; deleted_coupons: number }> => {
+    const response = await apiClient.delete(`/cabinet/admin/coupons/${id}`);
+    return response.data;
+  },
+
   redeemCoupon: async (token: string): Promise<CouponRedeemResponse> => {
     const response = await apiClient.post('/cabinet/coupon/redeem', { token });
     return response.data;

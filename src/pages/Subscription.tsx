@@ -43,6 +43,12 @@ import {
   sbpUiState,
   type SbpUiState,
 } from '../utils/sbpRecurring';
+import {
+  isLavaFeatureDisabledError,
+  lavaPeriodLabelKey,
+  lavaUiState,
+  type LavaUiState,
+} from '../utils/lavaRecurring';
 import Twemoji from 'react-twemoji';
 import { DeviceTopupSheet } from '../components/subscription/sheets/DeviceTopupSheet';
 import { DeviceReductionSheet } from '../components/subscription/sheets/DeviceReductionSheet';
@@ -373,6 +379,78 @@ export default function Subscription() {
     );
     if (!confirmed) return;
     cancelSbpMutation.mutate();
+  };
+
+  // Автопродление Lava — независимый от Platega движок с той же семантикой
+  // состояний. Поллинг раз в 8с, пока привязка PENDING (ждём оплату первого
+  // счёта), чтобы UI сам перешёл в active/past_due.
+  const lavaQuery = useQuery({
+    queryKey: ['lava-recurring', subscriptionId],
+    queryFn: () => subscriptionApi.getLavaRecurring(subscriptionId),
+    enabled: !!subscription && !subscription.is_trial,
+    retry: false,
+    refetchInterval: (query) => (query.state.data?.status === 'PENDING' ? 8000 : false),
+  });
+  const lavaInfo = lavaQuery.data;
+  const lavaFeatureDisabled = isLavaFeatureDisabledError(lavaQuery.error);
+  const lavaUiStateValue: LavaUiState =
+    lavaInfo !== undefined || lavaFeatureDisabled
+      ? lavaUiState(lavaInfo, lavaFeatureDisabled)
+      : 'hidden';
+
+  const enableLavaMutation = useMutation({
+    mutationFn: () => subscriptionApi.enableLavaRecurring(subscriptionId),
+    onSuccess: (data) => {
+      if (data.redirect_url) {
+        openPaymentUrl(data.redirect_url, platform, openLink);
+      }
+      queryClient.invalidateQueries({ queryKey: ['lava-recurring', subscriptionId] });
+      // Бэкенд снимает autopay_enabled при включении рекуррента провайдера.
+      queryClient.invalidateQueries({ queryKey: ['subscription', subscriptionId] });
+    },
+    onError: (error: unknown) => {
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data
+        ?.detail;
+      showToast({
+        type: 'error',
+        title: typeof detail === 'string' ? detail : t('subscription.lavaRecurring.enableError'),
+        message: '',
+        duration: 3000,
+      });
+    },
+  });
+
+  const cancelLavaMutation = useMutation({
+    mutationFn: () => subscriptionApi.cancelLavaRecurring(subscriptionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lava-recurring', subscriptionId] });
+      queryClient.invalidateQueries({ queryKey: ['subscription', subscriptionId] });
+      showToast({
+        type: 'success',
+        title: t('subscription.lavaRecurring.cancelled'),
+        message: '',
+        duration: 3000,
+      });
+    },
+    onError: (error: unknown) => {
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data
+        ?.detail;
+      showToast({
+        type: 'error',
+        title: typeof detail === 'string' ? detail : t('subscription.lavaRecurring.cancelError'),
+        message: '',
+        duration: 3000,
+      });
+    },
+  });
+
+  const handleCancelLava = async () => {
+    const confirmed = await destructiveConfirm(
+      t('subscription.lavaRecurring.confirmCancel'),
+      t('subscription.lavaRecurring.cancel'),
+    );
+    if (!confirmed) return;
+    cancelLavaMutation.mutate();
   };
 
   const autopayMutation = useMutation({
@@ -1274,6 +1352,128 @@ export default function Subscription() {
                           className="w-full whitespace-nowrap rounded-xl border border-error-500/30 bg-error-500/10 px-5 py-2.5 text-sm font-medium text-error-400 transition-colors hover:bg-error-500/20 disabled:opacity-50 sm:w-auto"
                         >
                           {t('subscription.sbpRecurring.cancel')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ─── Автопродление Lava ───
+                   Независимый от Platega движок: сиблинг того же тоггла, те же
+                   состояния. Период задан продуктом в кабинете Lava и приезжает
+                   числом дней, поэтому подпись строится из charge_days. */}
+              {!subscription.is_trial && lavaUiStateValue !== 'hidden' && (
+                <div
+                  className="mt-3 rounded-[14px] p-3.5"
+                  style={{
+                    background: g.innerBg,
+                    border: `1px solid ${g.innerBorder}`,
+                  }}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-dark-50">
+                        {t('subscription.lavaRecurring.title')}
+                      </div>
+
+                      {lavaUiStateValue === 'off' && (
+                        <div className="mt-0.5 text-[11px] text-dark-50/30">
+                          {t('subscription.lavaRecurring.autopayHint')}
+                        </div>
+                      )}
+                      {lavaUiStateValue === 'pending' && (
+                        <div className="mt-0.5 text-[11px] text-dark-50/30">
+                          {t('subscription.lavaRecurring.statusPending')}
+                        </div>
+                      )}
+                      {lavaUiStateValue === 'active' && lavaInfo && (
+                        <>
+                          <div className="mt-0.5 text-[11px] text-dark-50/30">
+                            {(() => {
+                              const periodKey = lavaPeriodLabelKey(lavaInfo.charge_days);
+                              const amount = formatAmount((lavaInfo.amount_kopeks ?? 0) / 100);
+                              return periodKey
+                                ? t('subscription.lavaRecurring.amountPerPeriod', {
+                                    amount,
+                                    period: t(periodKey),
+                                  })
+                                : t('subscription.lavaRecurring.amountPerDays', {
+                                    amount,
+                                    days: lavaInfo.charge_days ?? 0,
+                                  });
+                            })()}
+                          </div>
+                          {lavaInfo.next_charge_at && (
+                            <div className="mt-0.5 text-[11px] text-dark-50/30">
+                              {t('subscription.lavaRecurring.nextCharge', {
+                                date: new Date(lavaInfo.next_charge_at).toLocaleDateString(
+                                  uiLocale(),
+                                  {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                  },
+                                ),
+                              })}
+                            </div>
+                          )}
+                        </>
+                      )}
+                      {lavaUiStateValue === 'past_due' && (
+                        <div className="mt-0.5 text-[11px] font-medium text-warning-400">
+                          {t('subscription.lavaRecurring.statusPastDue')}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                      {lavaUiStateValue === 'off' && (
+                        <button
+                          onClick={() => enableLavaMutation.mutate()}
+                          disabled={enableLavaMutation.isPending}
+                          className="w-full whitespace-nowrap rounded-xl bg-accent-500 px-5 py-2.5 text-sm font-medium text-on-accent transition-opacity disabled:opacity-50 sm:w-auto"
+                        >
+                          {enableLavaMutation.isPending ? (
+                            <span className="mx-auto block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                          ) : (
+                            t('subscription.lavaRecurring.connect')
+                          )}
+                        </button>
+                      )}
+
+                      {lavaUiStateValue === 'pending' && (
+                        <>
+                          {lavaInfo?.redirect_url && (
+                            <button
+                              onClick={() => {
+                                if (lavaInfo.redirect_url) {
+                                  openPaymentUrl(lavaInfo.redirect_url, platform, openLink);
+                                }
+                              }}
+                              className="w-full whitespace-nowrap rounded-xl bg-accent-500 px-5 py-2.5 text-sm font-medium text-on-accent transition-opacity sm:w-auto"
+                            >
+                              {t('subscription.lavaRecurring.payFirst')}
+                            </button>
+                          )}
+                          <button
+                            onClick={handleCancelLava}
+                            disabled={cancelLavaMutation.isPending}
+                            className="text-[11px] font-medium transition-colors disabled:opacity-50 sm:text-right"
+                            style={{ color: 'rgb(var(--color-critical-500))' }}
+                          >
+                            {t('subscription.lavaRecurring.cancel')}
+                          </button>
+                        </>
+                      )}
+
+                      {(lavaUiStateValue === 'active' || lavaUiStateValue === 'past_due') && (
+                        <button
+                          onClick={handleCancelLava}
+                          disabled={cancelLavaMutation.isPending}
+                          className="w-full whitespace-nowrap rounded-xl border border-error-500/30 bg-error-500/10 px-5 py-2.5 text-sm font-medium text-error-400 transition-colors hover:bg-error-500/20 disabled:opacity-50 sm:w-auto"
+                        >
+                          {t('subscription.lavaRecurring.cancel')}
                         </button>
                       )}
                     </div>
