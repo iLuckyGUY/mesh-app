@@ -2036,9 +2036,16 @@
         "sys_maintenance": "维护",
         "sys_backup": "备份",
         "sys_version": "版本",
-        "sys_logging": "日志"
+        "sys_logging": "日志",
+        "iface_info": "法律文件",
+        "iface_menu": "菜单按钮",
+        "sys_cabinet": "用户中心",
+        "sys_other": "其他设置"
       },
       "categories": {
+        "CABINET": "用户中心",
+        "INFO_PAGES": "法律文件与 FAQ",
+        "MENU": "菜单按钮",
         "TELEGRAM_WIDGET": "Telegram Login Widget",
         "TELEGRAM_OIDC": "Telegram Login (OIDC)"
       },

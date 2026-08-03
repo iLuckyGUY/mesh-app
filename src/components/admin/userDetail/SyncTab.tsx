@@ -151,16 +151,16 @@ export function SyncTab({
         </div>
       )}
 
-      {/* UUID info */}
+      {/* Panel identity */}
       <div className="rounded-xl bg-dark-800/50 p-4">
         {syncStatus?.subscription_tariff_name && (
           <div className="mb-2 text-xs text-dark-500">{syncStatus.subscription_tariff_name}</div>
         )}
-        <div className="mb-1 text-sm text-dark-400">Remnawave UUID</div>
+        <div className="mb-1 text-sm text-dark-400">Remnawave ID</div>
         <div className="break-all font-mono text-sm text-dark-100">
-          {syncStatus?.remnawave_uuid ||
-            user.remnawave_uuid ||
-            t('admin.users.detail.sync.notLinked')}
+          {/* Remnawave 3.0.0 identifies a panel user by a numeric id, so 0 is not
+              a valid id but ?? would still render it — check for null explicitly. */}
+          {syncStatus?.remnawave_id ?? user.remnawave_id ?? t('admin.users.detail.sync.notLinked')}
         </div>
       </div>
 

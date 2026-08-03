@@ -2,10 +2,16 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { adminSettingsApi, SettingDefinition } from '../api/adminSettings';
+import { adminSettingsApi, type SettingDefinition } from '../api/adminSettings';
 import { themeColorsApi } from '../api/themeColors';
 import { useFavoriteSettings } from '../hooks/useFavoriteSettings';
-import { SETTINGS_TREE, findTreeLocation, formatSettingKey } from '../components/admin';
+import {
+  OTHER_CATEGORIES,
+  SETTINGS_TREE,
+  findTreeLocation,
+  formatSettingKey,
+  getMappedCategoryKeys,
+} from '../components/admin';
 import { usePlatform } from '../platform/hooks/usePlatform';
 import { AnalyticsTab } from '../components/admin/AnalyticsTab';
 import { BrandingTab } from '../components/admin/BrandingTab';
@@ -75,10 +81,18 @@ export default function AdminSettings() {
     if (!activeTreeInfo || !allSettings || !Array.isArray(allSettings)) return [];
 
     const categoryKeys = activeTreeInfo.child.categories;
+    // Пункт-сборник показывает всё, чему не нашлось места в дереве: категории на
+    // бэкенде выводятся из имени ключа, поэтому новая настройка легко создаёт
+    // категорию, которой здесь нет — раньше такие настройки просто исчезали.
+    const isOtherSection = categoryKeys.includes(OTHER_CATEGORIES);
+    const mappedCategories = isOtherSection ? getMappedCategoryKeys() : null;
     const categoryMap = new Map<string, SettingDefinition[]>();
 
     for (const setting of allSettings) {
-      if (categoryKeys.includes(setting.category.key)) {
+      const belongsHere = mappedCategories
+        ? !mappedCategories.has(setting.category.key)
+        : categoryKeys.includes(setting.category.key);
+      if (belongsHere) {
         // Hide tariff-dependent settings when not in tariffs mode
         if (!isTariffsMode && TARIFF_MODE_SETTINGS.includes(setting.key)) continue;
 

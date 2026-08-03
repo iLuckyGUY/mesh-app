@@ -142,7 +142,7 @@ export interface UserDetailResponse {
   promo_offer_discount_source: string | null;
   promo_offer_discount_expires_at: string | null;
   recent_transactions: UserTransactionItem[];
-  remnawave_uuid: string | null;
+  remnawave_id: number | null;
 }
 
 export interface UserPanelInfo {
@@ -271,7 +271,7 @@ export interface UserAvailableTariffsResponse {
 
 // Sync types
 export interface PanelUserInfo {
-  uuid: string | null;
+  id: number;
   short_uuid: string | null;
   username: string | null;
   status: string | null;
@@ -295,7 +295,7 @@ export interface SyncToPanelResponse {
   success: boolean;
   message: string;
   action: string;
-  panel_uuid: string | null;
+  panel_user_id: number | null;
   changes: Record<string, unknown>;
   errors: string[];
 }
@@ -303,7 +303,7 @@ export interface SyncToPanelResponse {
 export interface PanelSyncStatusResponse {
   user_id: number;
   telegram_id: number;
-  remnawave_uuid: string | null;
+  remnawave_id: number | null;
   subscription_id: number | null;
   subscription_tariff_name: string | null;
   last_sync: string | null;

@@ -1969,9 +1969,16 @@
         "sys_maintenance": "نگهداری",
         "sys_backup": "پشتیبان‌گیری",
         "sys_version": "نسخه",
-        "sys_logging": "لاگ‌ها"
+        "sys_logging": "لاگ‌ها",
+        "iface_info": "اسناد حقوقی",
+        "iface_menu": "دکمه منو",
+        "sys_cabinet": "کابین",
+        "sys_other": "سایر تنظیمات"
       },
       "categories": {
+        "CABINET": "کابین",
+        "INFO_PAGES": "اسناد حقوقی و پرسش‌های متداول",
+        "MENU": "دکمه منو",
         "TELEGRAM_WIDGET": "Telegram Login Widget",
         "TELEGRAM_OIDC": "Telegram Login (OIDC)"
       },

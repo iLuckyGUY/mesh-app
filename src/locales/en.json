@@ -2306,9 +2306,16 @@
         "sys_maintenance": "Maintenance",
         "sys_backup": "Backup",
         "sys_version": "Version",
-        "sys_logging": "Logging"
+        "sys_logging": "Logging",
+        "iface_info": "Legal documents",
+        "iface_menu": "Menu button",
+        "sys_cabinet": "Cabinet",
+        "sys_other": "Other settings"
       },
       "categories": {
+        "CABINET": "Cabinet",
+        "INFO_PAGES": "Legal documents and FAQ",
+        "MENU": "Menu button",
         "TELEGRAM_WIDGET": "Telegram Login Widget",
         "TELEGRAM_OIDC": "Telegram Login (OIDC)"
       },
